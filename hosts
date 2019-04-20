@@ -1,0 +1,5 @@
+[master]
+192.168.50.10  ansible_ssh_user=vagrant ansible_ssh_pass=vagrant ansible_ssh_common_args='-o StrictHostKeyChecking=no'
+
+[workers]
+192.168.50.[11:12]  ansible_ssh_user=vagrant ansible_ssh_pass=vagrant ansible_ssh_common_args='-o StrictHostKeyChecking=no'
