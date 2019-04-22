@@ -1,5 +1,5 @@
 # based on https://kubernetes.io/blog/2019/03/15/kubernetes-setup-using-ansible-and-vagrant/
-- hosts: all
+- hosts: master
   become: true
   tasks:
   - name: Install packages that allow apt to be used over HTTPS

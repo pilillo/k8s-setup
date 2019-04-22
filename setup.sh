@@ -25,7 +25,7 @@ get_pacman(){
 }
 
 # install ansible
-command -v ansible || {
+command -v ansible > /dev/null 2>&1 || {
     echo "Ansible is not installed!"
 
     case $(get_pacman) in
@@ -42,7 +42,7 @@ command -v ansible || {
             ;;
         pacman)
             echo "Installing using pacman"
-            sudo pacman -Sy ansible
+            sudo pacman -Sy ansible --noconfirm
             ;;
         pip)
             echo "Installing using pip"

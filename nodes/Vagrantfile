@@ -1,10 +1,16 @@
+VAGRANTFILE_API_VERSION = "2"
 PROVIDER = "virtualbox"
 IMAGE_NAME = "archlinux/archlinux"
+# using different images is only for testing purposes (to see if the Ansible script actually works)
+IMAGES=["bento/ubuntu-18.04", "centos/7"]
 NO_WORKERS = 2
 
-Vagrant.configure("2") do |config|
+Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
     # https://www.vagrantup.com/docs/vagrantfile/ssh_settings.html#config-ssh-insert_key
-    config.ssh.insert_key = false
+    # if false every box shares the same key: https://github.com/hashicorp/vagrant/blob/master/keys/vagrant.pub
+    config.ssh.insert_key = true
+    # default port forwarding range is 2200..2250 which may be not enough, let's make it bigger
+    config.vm.usable_port_range = (2200..5000)
 
     config.vm.provider PROVIDER do |v|
         v.memory = 1024
@@ -21,19 +27,41 @@ Vagrant.configure("2") do |config|
         # alternatively we could use dhcp
         #config.vm.network "private_network", type: "dhcp"
         master.vm.hostname = "k8s-master"
+        # open all necessary ports for the master node
+        # https://kubernetes.io/docs/setup/independent/install-kubeadm/#master-node-s
+        master.vm.network :forwarded_port, host: 6443, guest: 6443, auto_correct: true
+        master.vm.network :forwarded_port, host: 2379, guest: 2380, auto_correct: true
+        master.vm.network :forwarded_port, host: 10250, guest: 10250, auto_correct: true
+        master.vm.network :forwarded_port, host: 10251, guest: 10251, auto_correct: true
+        master.vm.network :forwarded_port, host: 10252, guest: 10252, auto_correct: true
     end
 
     (1..NO_WORKERS).each do |i|
         config.vm.define "node-#{i}" do |node|
-            node.vm.box = IMAGE_NAME
+            #node.vm.box = IMAGE_NAME
+            #node.vm.box = IMAGES[#{i}]
+            #node.vm.box = "IMAGES[#{i-1}]"
+            node.vm.box = "#{IMAGES[(i-1) % IMAGES.size]}"
             # configure worker node using static ip in private network
             node.vm.network "private_network", ip: "192.168.50.#{i + 10}"
             # alternatively we could use dhcp
             #config.vm.network "private_network", type: "dhcp"
             node.vm.hostname = "node-#{i}"
+            # port forward
+            # https://kubernetes.io/docs/setup/independent/install-kubeadm/#worker-node-s
+            for i in 30000..32767
+                node.vm.network :forwarded_port, guest: i, host: i, auto_correct: true
+            end
         end
     end
 
-    # we need to install python to interact on the nodes using Ansible
-    config.vm.provision "shell", inline: "pacman -S python --noconfirm"
+    # add the public key to each node to be able to connect to them
+    # this will overwrite the default key file from vagrant
+    config.vm.provision "file", source: "key.pub", destination: "~/.ssh/authorized_keys__"
+    # append iff we did not do it previously (by default there is only the default vagrant key (i.e. 1 entry) in the file
+    # use privileged: false to remain user vagrant
+    #config.vm.provision "shell", inline: "[[ $(cat ~/.ssh/authorized_keys | wc -l) -lt 2 ]] && cat ~/.ssh/authorized_keys__ | tee -a ~/.ssh/authorized_keys && rm ~/.ssh/authorized_keys__", privileged: false
+
+    # install any node dependency needed
+    config.vm.provision "shell", path: "bootstrap.sh", privileged: false
 end

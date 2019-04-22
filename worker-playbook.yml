@@ -1,4 +1,4 @@
-- hosts: all
+- hosts: workers
   become: true
   tasks:
   - name: Install packages that allow apt to be used over HTTPS
