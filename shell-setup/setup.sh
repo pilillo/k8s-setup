@@ -28,41 +28,99 @@ get_pacman(){
     done
 }
 
+get_ip_v4(){
+    # return ip v4 on specific interface
+    command -v "ifconfig" > /dev/null 2>&1 && {
+        echo $(sudo ifconfig "${1}" | grep 'inet ' |  awk '{print $2}')
+    } || {
+        echo $(sudo ip address show dev "${1}" | grep -o "inet [0-9]*\.[0-9]*\.[0-9]*\.[0-9]*" | grep -o "[0-9]*\.[0-9]*\.[0-9]*\.[0-9]*")
+    }
+}
 
 setup_docker(){
-    DOCKER_USER=$1
-    # install master node using specific package manager of target node
-    command -v "docker" > /dev/null 2>&1 && {
+    # https://kubernetes.io/docs/setup/cri/
+    # check if the docker command is available, but also if the daemon was started
+    command -v "docker" > /dev/null 2>&1 && docker ps > /dev/null 2>&1 && {
         echo "docker is already installed"
     } || {
         case $(get_pacman) in
         yum)
-            echo "Installing using yum"
-            sudo yum install -y curl
-            curl -sSL get.docker.com | sh
+            echo "Installing docker using yum"
+            sudo yum install -y curl wget
+            #curl -sSL get.docker.com | sh
+            sudo yum install -y yum-utils device-mapper-persistent-data lvm2
+            sudo yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+            sudo yum update -y && sudo yum install docker-ce -y #docker-ce-18.06.2.ce
+            sudo mkdir -p /etc/docker
+            docker_config="/etc/docker/daemon.json"
+            echo "{" | sudo tee $docker_config
+            echo '  "exec-opts": ["native.cgroupdriver=systemd"],' | sudo tee -a $docker_config
+            echo '  "log-driver": "json-file",' | sudo tee -a $docker_config
+            echo '  "log-opts": {' | sudo tee -a $docker_config
+            echo '    "max-size": "100m"' | sudo tee -a $docker_config
+            echo '  },' | sudo tee -a $docker_config
+            echo '  "storage-driver": "overlay2",' | sudo tee -a $docker_config
+            echo '  "storage-opts": [' | sudo tee -a $docker_config
+            echo '    "overlay2.override_kernel_check=true"' | sudo tee -a $docker_config
+            echo '  ]' | sudo tee -a $docker_config
+            echo '}' | sudo tee -a $docker_config
+            sudo mkdir -p /etc/systemd/system/docker.service.d
+            sudo systemctl daemon-reload
             ;;
         apt-get)
-            echo "Installing using apt-get"
-            sudo apt-get update
-            sudo apt-get install -y curl
+            echo "Installing docker using apt-get"
+            export DEBIAN_FRONTEND=noninteractive
+            sudo apt-get update -y
+            sudo apt-get install -y curl wget
             # https://tecadmin.net/install-docker-on-ubuntu/
-            #sudo apt-get -y install apt-transport-https ca-certificates software-properties-common
-            #curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add
-            #sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+            sudo apt-get -y install apt-transport-https ca-certificates software-properties-common
+            curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add
+            sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+            sudo apt-get update -y
+            sudo apt-get install -y docker-ce
             #sudo apt-get install docker-ce docker-ce-cli containerd.io
-            curl -sSL get.docker.com | sh
+            #curl -sSL get.docker.com | sh
+            # use overlay2 as underlying storage
+            sudo mkdir -p /etc/docker
+            docker_config="/etc/docker/daemon.json"
+            echo "{" | sudo tee $docker_config
+            echo '  "exec-opts": ["native.cgroupdriver=systemd"],' | sudo tee -a $docker_config
+            echo '  "log-driver": "json-file",' | sudo tee -a $docker_config
+            echo '  "log-opts": {' | sudo tee -a $docker_config
+            echo '    "max-size": "100m"' | sudo tee -a $docker_config
+            echo '  },' | sudo tee -a $docker_config
+            echo '  "storage-driver": "overlay2"' | sudo tee -a $docker_config
+            echo '}' | sudo tee -a $docker_config
+            sudo mkdir -p /etc/systemd/system/docker.service.d
+            sudo systemctl daemon-reload
             ;;
         pacman)
-            echo "Installing using pacman"
+            echo "Installing docker using pacman"
+            sudo pacman -Syy || sudo rm /var/lib/pacman/db.lck
+            sudo pacman -Sy curl wget --noconfirm
             sudo pacman -Sy docker --noconfirm
+            # use overlay2 as underlying storage
+            sudo mkdir -p /etc/docker
+            docker_config="/etc/docker/daemon.json"
+            echo "{" | sudo tee $docker_config
+            #echo '  "exec-opts": ["native.cgroupdriver=systemd"],' | sudo tee -a $docker_config
+            #echo '  "log-driver": "json-file",' | sudo tee -a $docker_config
+            #echo '  "log-opts": {' | sudo tee -a $docker_config
+            #echo '    "max-size": "100m"' | sudo tee -a $docker_config
+            #echo '  },' | sudo tee -a $docker_config
+            echo '  "storage-driver": "overlay2"' | sudo tee -a $docker_config
+            echo '}' | sudo tee -a $docker_config
+            sudo mkdir -p /etc/systemd/system/docker.service.d
+            sudo systemctl daemon-reload
             ;;
         esac
         # add user to docker group
-        sudo usermod -aG docker $DOCKER_USER
+        sudo usermod -aG docker $(whoami)
         # reload group privileges
         newgrp docker
         # restart docker daemon
-        sudo systemctl enable --now docker
+        sudo systemctl enable docker
+        sudo systemctl restart docker
     }
 }
 
@@ -73,7 +131,7 @@ disable_swap(){
         # disable already mounted swap
         sudo swapoff -a
         # sed to comment out swap partition at /etc/fstab
-        sudo sed -i.bak -r 's/(.+ swap .+)/#\1/' /etc/fstab
+        sudo sed -i '/swap/ s/^\(.*\)$/#\1/g' /etc/fstab
     else
         echo "No Swap partition to disable"
     fi
@@ -104,7 +162,7 @@ install_kubeadm(){
             sudo setenforce 0
             # set SELinux in permissive mode to allow containers to access the host filesystem, which is needed by pod networks for example
             sudo sed -i 's/^SELINUX=enforcing$/SELINUX=permissive/' /etc/selinux/config
-            sudo yum install -y kubeadm kubelet kubectl --disableexcludes=kubernetes
+            sudo yum install -y kubernetes-cni kubeadm kubelet kubectl --disableexcludes=kubernetes
             ;;
         apt-get)
             echo "Installing using apt-get"
@@ -117,7 +175,7 @@ install_kubeadm(){
             }
             # install
             sudo apt-get update -q && \
-            sudo apt-get install -qy kubeadm kubelet kubectl
+            sudo apt-get install -qy kubernetes-cni kubeadm kubelet kubectl
             ;;
         pacman)
             echo "Installing from AUR"
@@ -128,6 +186,8 @@ install_kubeadm(){
             # cloning packages from AUR to HOME
             CURR_DIR=$(get_curr_dir)
             echo "CURR DIR is: "$CURR_DIR
+            cd $HOME
+            git clone https://aur.archlinux.org/kubernetes-cni-bin.git && cd kubernetes-cni-bin && makepkg -si --noconfirm
             cd $HOME
             git clone https://aur.archlinux.org/kubelet-bin.git && cd kubelet-bin && makepkg -si --noconfirm
             cd $HOME
@@ -165,12 +225,12 @@ init_cluster(){
 
 get_tokens(){
     # get token created during the init phase
-    if [[ $(kubeadm token list | awk 'FNR > 1 { print $1 }' | wc -l) -gt 0 ]]; then
-        token=$(kubeadm token list | awk 'FNR > 1 { print $1 }')
-        kubeadm token delete $token
+    if [[ $(sudo kubeadm token list | awk 'FNR > 1 { print $1 }' | wc -l) -gt 0 ]]; then
+        token=$(sudo kubeadm token list | awk 'FNR > 1 { print $1 }')
+        sudo kubeadm token delete $token
     fi
     # creating a new join command to be used on the workers
-    kubeadm token create --print-join-command > ~/worker_init.sh
+    sudo kubeadm token create --print-join-command > ~/worker_init.sh
 }
 
 join_cluster(){
@@ -193,6 +253,7 @@ upload_file_on_workers(){
     # 4: user
     # 5: destination folder
     # 6: command to be ran on the file (optional)
+    echo "We have ${#WORKERS[@]} workers"
     for W in "${WORKERS[@]}"
     do
         filename=$(get_filename "${3}")
@@ -209,18 +270,24 @@ upload_file_on_workers(){
 set_kubectl(){
     # copies the k8s config file to the selected user HOME
     mkdir -p ~/.kube
-    sudo cp -f /etc/kubernetes/admin.conf ~/.kube/config
-    sudo chown $(id -u):$(id -g) ~/.kube/config
-    export KUBECONFIG=~/admin.conf
-    echo "export KUBECONFIG=$HOME/admin.conf" | tee -a ~/.bashrc
-    echo "kubectl should now work correctly"
+    sudo cp -f /etc/kubernetes/admin.conf ~/.kube/admin.conf && \
+    sudo chown $(id -u):$(id -g) ~/.kube/admin.conf && \
+    export KUBECONFIG=~/.kube/admin.conf && {
+        # append only the first time we run it
+        cat ~/.bashrc | grep KUBECONFIG > /dev/null 2>&1 || echo "export KUBECONFIG=~/.kube/admin.conf" | tee -a ~/.bashrc
+    } && echo "kubectl should now work correctly"
 }
 
 set_flannel(){
     # action: apply, delete
+    kubectl ${1} -f https://raw.githubusercontent.com/coreos/flannel/a70459be0084506e4ec919aa1c114638878db11b/Documentation/kube-flannel.yml
     # add flannel cfg
-    kubectl ${1} -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml
-    kubectl ${1} -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/k8s-manifests/kube-flannel-rbac.yml
+    #kubectl ${1} -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml
+    #kubectl ${1} -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/k8s-manifests/kube-flannel-rbac.yml
+}
+
+set_dashboard(){
+    kubectl ${1} -f https://raw.githubusercontent.com/kubernetes/dashboard/v1.10.1/src/deploy/recommended/kubernetes-dashboard.yaml
 }
 
 set_weave(){
@@ -236,18 +303,44 @@ set_calico(){
     #sudo chmod +x calicoctl
 }
 
+schedule_master(){
+    # https://kubernetes.io/docs/setup/independent/create-cluster-kubeadm/#control-plane-node-isolation
+    kubectl taint nodes --all node-role.kubernetes.io/master-
+}
 
-CLUSTER_USER="vagrant"
-MASTER_HOST="192.168.50.10"
-MASTER_PORT="6443"
-WORKERS=( "192.168.50.11" "192.168.50.12" )
-SSH_KEY_PATH="$HOME/Documents/k8s-setup/nodes/key"
-CIDR_NET="192.168.0.0/16"
-KUBE_VERSION="1.14.1"
+add_nodeip_to_kubelet_config(){
+    # needed when installing in a bunch of vagrant VMs where we got multiple network interfaces (eth0, eth1, etc.) and the wrong one may be taken
+    # e.g. https://medium.com/@joatmon08/playing-with-kubeadm-in-vagrant-machines-part-2-bac431095706
+    target_file = "/etc/systemd/system/kubelet.service.d/10-kubeadm.conf"
 
+    # make sure we can access the folder
+    sudo mkdir -p $(dirname "$target_file")
+
+    # Note: This dropin only works with kubeadm and kubelet v1.11+
+    echo '[Service]' | sudo tee $target_file
+    echo 'Environment="KUBELET_KUBECONFIG_ARGS=--bootstrap-kubeconfig=/etc/kubernetes/bootstrap-kubelet.conf --kubeconfig=/etc/kubernetes/kubelet.conf"' | sudo tee -a $target_file
+    echo 'Environment="KUBELET_CONFIG_ARGS=--config=/var/lib/kubelet/config.yaml"' | sudo tee -a $target_file
+    echo '# This is a file that kubeadm init and kubeadm join generates at runtime, populating the KUBELET_KUBEADM_ARGS variable dynamically' | sudo tee -a $target_file
+    echo 'EnvironmentFile=-/var/lib/kubelet/kubeadm-flags.env' | sudo tee -a $target_file
+    echo '# This is a file that the user can use for overrides of the kubelet args as a last resort. Preferably, the user should use' | sudo tee -a $target_file
+    echo '# the .NodeRegistration.KubeletExtraArgs object in the configuration files instead. KUBELET_EXTRA_ARGS should be sourced from this file.' | sudo tee -a $target_file
+    echo 'EnvironmentFile=-/etc/default/kubelet' | sudo tee -a $target_file
+    echo "Environment='KUBELET_EXTRA_ARGS=--node-ip="${1}"'" | sudo tee -a $target_file
+    echo 'ExecStart=' | sudo tee -a $target_file
+    echo 'ExecStart=/usr/bin/kubelet $KUBELET_KUBECONFIG_ARGS $KUBELET_CONFIG_ARGS $KUBELET_KUBEADM_ARGS $KUBELET_EXTRA_ARGS' | sudo tee -a $target_file
+
+    # restart kubelet systemd-daemon
+    sudo systemctl daemon-reload
+    sudo systemctl restart kubelet
+}
+
+#################################################
+# convert to array
+WORKERS=($WORKERS)
 
 # check if we run as main or as specific function
 if [ $# -eq 0 ]; then
+    echo "We have ${#WORKERS[@]} workers"
     SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
     # upload whatever private ssh key we set to use to the master node, with target name key (so that we know what to expect when doing init)
@@ -256,14 +349,14 @@ if [ $# -eq 0 ]; then
 
     echo "Uploading setup script to master node at $MASTER_HOST"
     $(upload_file $SSH_KEY_PATH 22 "$SCRIPT_DIR/setup.sh" $CLUSTER_USER $MASTER_HOST "~/")
-    $(run_remote_command $SSH_KEY_PATH 22 $CLUSTER_USER $MASTER_HOST "chmod +x ~/setup.sh; . ~/setup.sh init")
+    $(run_remote_command $SSH_KEY_PATH 22 $CLUSTER_USER $MASTER_HOST "chmod +x ~/setup.sh; ~/setup.sh init")
 
     # upload setup file on each worker, run the command on the setup file
-    echo "$(upload_file_on_workers ${SSH_KEY_PATH} 22 ${SCRIPT_DIR}/setup.sh ${CLUSTER_USER} '~/' 'chmod +x ~/setup.sh; . ~/setup.sh add')"
+    echo "$(upload_file_on_workers ${SSH_KEY_PATH} 22 ${SCRIPT_DIR}/setup.sh ${CLUSTER_USER} '~/' 'chmod +x ~/setup.sh; ~/setup.sh add')"
 else
     if [ "$1" = "init" ]; then
         echo "---- Creating K8s cluster, init on Master node! ----"
-        echo $(setup_docker "$CLUSTER_USER")
+        echo $(setup_docker)
         echo $(disable_swap)
         echo $(install_kubeadm)
         echo $(init_cluster "$CIDR_NET" "$MASTER_HOST" "$KUBE_VERSION")
@@ -274,13 +367,19 @@ else
         echo $(set_kubectl)
         # add networking
         echo $(set_flannel "apply")
+        echo $(set_dashboard "apply")
         echo "---- end master node setup ----"
     elif [ "$1" = "add" ]; then
         echo "---- Initializing setup on $(hostname) ----"
-        echo $(setup_docker "$CLUSTER_USER")
+        echo $(setup_docker)
         echo $(disable_swap)
         echo $(install_kubeadm)
         echo $(join_cluster)
+        # in case we use vagrant VMs to host the workers, make sure to pass --node-ip to the kubelet startup
+        if [[ "$(whoami)" = "vagrant" ]]; then
+            echo "eth0 has IP: $(get_ip_v4 'eth0'), eth1 has IP: $(get_ip_v4 'eth1')"
+            echo $(add_nodeip_to_kubelet_config "$(get_ip_v4 'eth1')")
+        fi
         echo "---- end setup on $(hostname) ----"
     else
         echo "passed parameter $1 not recognized!"
