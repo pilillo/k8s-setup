@@ -32,7 +32,7 @@ The following operations are performed:
 * deactivation of memory swapping (otherwise the kubelet won't start)
 * installation of kubeadm, kubectl, cni
 * addition of the worker to the cluster using kubeadm join
-* when using vagrant the kubelet config file is modified to overwrite the node ip, as otherwise the vagrant eth0 is used
+* when using vagrant the kubelet config file (`/etc/systemd/system/kubelet.service.d/10-kubeadm.conf`) is modified to specify the node ip (e.g., `Environment="KUBELET_EXTRA_ARGS=--node-ip=192.168.50.11"`), as otherwise the eth0 is used while we connect over eth1
 
 # 3.3 Interaction with the cluster across the network
 To use kubectl on the master we did set `KUBECONFIG=~/.kube/admin.conf`. 
