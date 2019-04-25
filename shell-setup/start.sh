@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+# to do: read these vars from a yaml file, or make it more easily configurable
 export CLUSTER_USER="vagrant"
 export MASTER_HOST="192.168.50.10"
 export MASTER_PORT="6443"

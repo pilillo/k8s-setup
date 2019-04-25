@@ -7,7 +7,12 @@ get_curr_dir(){
 upload_file(){
     # $(upload_file $REMOTE_PWD 22 "$PWD/test.txt" $REMOTE_USER $REMOTE_HOST "/home/$REMOTE_USER/")
     #echo sshpass -p $1 scp -o "UserKnownHostsFile=/dev/null" -o "StrictHostKeyChecking=no" -P ${2} $3 ${4}@${5}:${6}
-    echo "scp -o LogLevel=quiet -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -i $1 -P $2 $3 ${4}@${5}:${6}"
+    echo "scp -o LogLevel=quiet -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -i ${1} -P ${2} ${3} ${4}@${5}:${6}"
+}
+
+download_file(){
+    #$(download_file $SSH_KEY_PATH 22 "$SCRIPT_DIR/admin.conf" $CLUSTER_USER $MASTER_HOST "~/.kube/admin.conf")
+    echo "scp -o LogLevel=quiet -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -i ${1} -P ${2} ${4}@${5}:${6} ${3}"
 }
 
 run_remote_command(){
@@ -96,7 +101,6 @@ setup_docker(){
             ;;
         pacman)
             echo "Installing docker using pacman"
-            sudo pacman -Syy || sudo rm /var/lib/pacman/db.lck
             sudo pacman -Sy curl wget --noconfirm
             sudo pacman -Sy docker --noconfirm
             # use overlay2 as underlying storage
@@ -350,6 +354,10 @@ if [ $# -eq 0 ]; then
     echo "Uploading setup script to master node at $MASTER_HOST"
     $(upload_file $SSH_KEY_PATH 22 "$SCRIPT_DIR/setup.sh" $CLUSTER_USER $MASTER_HOST "~/")
     $(run_remote_command $SSH_KEY_PATH 22 $CLUSTER_USER $MASTER_HOST "chmod +x ~/setup.sh; ~/setup.sh init")
+
+    # download the config if you want to interact with the k8s cluster from here
+    echo "Downloading kubectl config from $MASTER_HOST"
+    $(download_file "$SSH_KEY_PATH" "22" "$SCRIPT_DIR/admin.conf" "$CLUSTER_USER" "$MASTER_HOST" "~/.kube/admin.conf")
 
     # upload setup file on each worker, run the command on the setup file
     echo "$(upload_file_on_workers ${SSH_KEY_PATH} 22 ${SCRIPT_DIR}/setup.sh ${CLUSTER_USER} '~/' 'chmod +x ~/setup.sh; ~/setup.sh add')"

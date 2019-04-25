@@ -4,6 +4,7 @@ The key is automatically loaded by the provisioner, and added to `~/.ssh/authori
 
 To start the nodes:  
 ``vagrant up``
+``vagrant up <host-name>``
 
 To show the status:  
 ``vagrant global-status``

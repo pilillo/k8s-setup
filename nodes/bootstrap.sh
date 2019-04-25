@@ -2,7 +2,7 @@
 
 get_pacman(){
     # one of these commands should always be available to install packages
-    pacmans=( yum apt-get pacman pip )
+    pacmans=( yum apt-get pacman )
 
     for i in "${pacmans[@]}"
     do
@@ -31,6 +31,7 @@ command -v python > /dev/null 2>&1 || {
             ;;
         pacman)
             echo "Installing using pacman"
+            sudo pacman -Syyu --noconfirm
             sudo pacman -Sy python --noconfirm
             ;;
     esac
