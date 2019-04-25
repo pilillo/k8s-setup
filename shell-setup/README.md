@@ -39,7 +39,7 @@ To use kubectl on the master we did set `KUBECONFIG=~/.kube/admin.conf`.
 We can copy this file and use the same approach to be able to interact with the cluster from any node in the network.
 
 Example:
-``
+```
 pilillo@ryzen shell-setup]$ kubectl get pods --kubeconfig admin.conf --all-namespaces
 NAMESPACE     NAME                                    READY   STATUS             RESTARTS   AGE
 data-mill     example-pod                             0/1     Error              0          19h
@@ -55,10 +55,10 @@ kube-system   kube-proxy-7tzx4                        1/1     Running           
 kube-system   kube-proxy-ld26g                        1/1     Running            1          21h
 kube-system   kube-proxy-t8kb6                        1/1     Running            1          19h
 kube-system   kube-scheduler-k8s-master               1/1     Running            1          21h
-``
+```
 
 We can delete the example pod which remained up upon an error.
-``
+```
 [pilillo@ryzen shell-setup]$ kubectl delete pod --kubeconfig admin.conf -n=data-mill example-pod
 pod "example-pod" deleted
-``
+```
