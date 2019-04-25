@@ -34,7 +34,7 @@ The following operations are performed:
 * addition of the worker to the cluster using kubeadm join
 * when using vagrant the kubelet config file is modified to overwrite the node ip, as otherwise the vagrant eth0 is used
 
-# 3.4 Interaction with the cluster across the network
+# 3.3 Interaction with the cluster across the network
 To use kubectl on the master we did set `KUBECONFIG=~/.kube/admin.conf`. 
 We can copy this file and use the same approach to be able to interact with the cluster from any node in the network.
 
