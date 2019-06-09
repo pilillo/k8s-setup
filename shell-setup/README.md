@@ -32,14 +32,14 @@ The following operations are performed:
 * deactivation of memory swapping (otherwise the kubelet won't start)
 * installation of kubeadm, kubectl, cni
 * addition of the worker to the cluster using kubeadm join
-* when using vagrant the kubelet config file is modified to overwrite the node ip, as otherwise the vagrant eth0 is used
+* when using vagrant the kubelet config file (`/etc/systemd/system/kubelet.service.d/10-kubeadm.conf`) is modified to specify the node ip (e.g., `Environment="KUBELET_EXTRA_ARGS=--node-ip=192.168.50.11"`), as otherwise the eth0 is used while we connect over eth1
 
-# 3.4 Interaction with the cluster across the network
+# 3.3 Interaction with the cluster across the network
 To use kubectl on the master we did set `KUBECONFIG=~/.kube/admin.conf`. 
 We can copy this file and use the same approach to be able to interact with the cluster from any node in the network.
 
 Example:
-``
+```
 pilillo@ryzen shell-setup]$ kubectl get pods --kubeconfig admin.conf --all-namespaces
 NAMESPACE     NAME                                    READY   STATUS             RESTARTS   AGE
 data-mill     example-pod                             0/1     Error              0          19h
@@ -55,10 +55,10 @@ kube-system   kube-proxy-7tzx4                        1/1     Running           
 kube-system   kube-proxy-ld26g                        1/1     Running            1          21h
 kube-system   kube-proxy-t8kb6                        1/1     Running            1          19h
 kube-system   kube-scheduler-k8s-master               1/1     Running            1          21h
-``
+```
 
 We can delete the example pod which remained up upon an error.
-``
+```
 [pilillo@ryzen shell-setup]$ kubectl delete pod --kubeconfig admin.conf -n=data-mill example-pod
 pod "example-pod" deleted
-``
+```

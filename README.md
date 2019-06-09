@@ -14,4 +14,4 @@ Perform a dry run before making any modification to the system:
 
 # 3. K8s Setup using Shell Script
 The shell script loads itself on each of the nodes, installs the k8s packages depending on the node OS, as well as uses kubeadm to init and the join the K8s cluster.
-``./shell-setup/setup.sh``
+``./shell-setup/start.sh`` The installation script also exports the kube config file to the shell-setup folder. This means that upon setup completion we are able to interact with the K8s cluster simply by using `kubectl --kubeconfig shell-config/admin.conf <command>`.
