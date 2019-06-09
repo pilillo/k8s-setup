@@ -42,6 +42,18 @@ get_ip_v4(){
     }
 }
 
+pre_setup(){
+  case $(get_pacman) in
+     yum)
+       ;;
+     apt-get)
+       export DEBIAN_FRONTEND=noninteractive
+       ;;
+     pacman)
+       ;;
+  esac
+}
+
 setup_docker(){
     # https://kubernetes.io/docs/setup/cri/
     # check if the docker command is available, but also if the daemon was started
@@ -51,11 +63,10 @@ setup_docker(){
         case $(get_pacman) in
         yum)
             echo "Installing docker using yum"
-            sudo yum install -y curl wget
-            #curl -sSL get.docker.com | sh
-            sudo yum install -y yum-utils device-mapper-persistent-data lvm2
-            sudo yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
-            sudo yum update -y && sudo yum install docker-ce -y #docker-ce-18.06.2.ce
+            #sudo yum install -y curl wget
+            #sudo yum install -y yum-utils device-mapper-persistent-data lvm2
+            #sudo yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+            #sudo yum update -y && sudo yum install docker-ce -y #docker-ce-18.06.2.ce
             sudo mkdir -p /etc/docker
             docker_config="/etc/docker/daemon.json"
             echo "{" | sudo tee $docker_config
@@ -74,17 +85,14 @@ setup_docker(){
             ;;
         apt-get)
             echo "Installing docker using apt-get"
-            export DEBIAN_FRONTEND=noninteractive
             sudo apt-get update -y
-            sudo apt-get install -y curl wget
+            #sudo apt-get install -y curl wget
             # https://tecadmin.net/install-docker-on-ubuntu/
-            sudo apt-get -y install apt-transport-https ca-certificates software-properties-common
-            curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add
-            sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
-            sudo apt-get update -y
-            sudo apt-get install -y docker-ce
-            #sudo apt-get install docker-ce docker-ce-cli containerd.io
-            #curl -sSL get.docker.com | sh
+            #sudo apt-get -y install apt-transport-https ca-certificates software-properties-common
+            #curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add
+            #sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+            #sudo apt-get update -y
+            #sudo apt-get install -y docker-ce
             # use overlay2 as underlying storage
             sudo mkdir -p /etc/docker
             docker_config="/etc/docker/daemon.json"
@@ -101,8 +109,8 @@ setup_docker(){
             ;;
         pacman)
             echo "Installing docker using pacman"
-            sudo pacman -Sy curl wget --noconfirm
-            sudo pacman -Sy docker --noconfirm
+            #sudo pacman -Sy curl wget --noconfirm
+            #sudo pacman -Sy docker --noconfirm
             # use overlay2 as underlying storage
             sudo mkdir -p /etc/docker
             docker_config="/etc/docker/daemon.json"
@@ -119,12 +127,13 @@ setup_docker(){
             ;;
         esac
         # add user to docker group
-        sudo usermod -aG docker $(whoami)
+        #sudo usermod -aG docker $(whoami)
         # reload group privileges
-        newgrp docker
+        #newgrp docker
         # restart docker daemon
         sudo systemctl enable docker
         sudo systemctl restart docker
+	echo "Docker installed and (re)started"
     }
 }
 
@@ -220,7 +229,7 @@ init_cluster(){
     # returned on a fresh system: https://github.com/kubernetes/kubeadm/issues/303
     # we add > /dev/null 2>&1, as we only want to know the number of tokens and not this spammy message
     if [[ $(kubeadm token list > /dev/null 2>&1 | awk 'FNR > 1 { print $1 }' | wc -l) -eq 0 ]]; then
-        echo "Running kubeadm init on master node"
+        echo "Running kubeadm init on master node with --pod-network-cidr=${1} --apiserver-advertise-address=${2} --kubernetes-version=${3}"
         sudo kubeadm init --pod-network-cidr=${1} --apiserver-advertise-address=${2} --kubernetes-version=${3} --ignore-preflight-errors=all
     else
         echo "Init on master was already ran"
@@ -262,6 +271,7 @@ upload_file_on_workers(){
     do
         filename=$(get_filename "${3}")
         echo "==> Uploading file $filename to worker at $W"
+        echo $(upload_file "${1}" "${2}" "${3}" "${4}" "${W}" "${5}")
         $(upload_file "${1}" "${2}" "${3}" "${4}" "${W}" "${5}")
         # the command is optional, i.e. ran only if passed
         if [ $# -gt 5 ]; then
@@ -284,24 +294,24 @@ set_kubectl(){
 
 set_flannel(){
     # action: apply, delete
-    kubectl ${1} -f https://raw.githubusercontent.com/coreos/flannel/a70459be0084506e4ec919aa1c114638878db11b/Documentation/kube-flannel.yml
+    kubectl ${1} -f https://raw.githubusercontent.com/coreos/flannel/a70459be0084506e4ec919aa1c114638878db11b/Documentation/kube-flannel.yml $( [[ ! -z "${2}" ]] && printf %s "--kubeconfig ${2}" )
     # add flannel cfg
     #kubectl ${1} -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml
     #kubectl ${1} -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/k8s-manifests/kube-flannel-rbac.yml
 }
 
 set_dashboard(){
-    kubectl ${1} -f https://raw.githubusercontent.com/kubernetes/dashboard/v1.10.1/src/deploy/recommended/kubernetes-dashboard.yaml
+    kubectl ${1} -f https://raw.githubusercontent.com/kubernetes/dashboard/v1.10.1/src/deploy/recommended/kubernetes-dashboard.yaml $( [[ ! -z "${2}" ]] && printf %s "--kubeconfig ${2}" )
 }
 
 set_weave(){
     # add weave as container network manager
-    kubectl ${1} -f https://cloud.weave.works/k8s/net?k8s-version="$(kubectl version | base64 | tr -d '\n')"
+    kubectl ${1} -f https://cloud.weave.works/k8s/net?k8s-version="$(kubectl version | base64 | tr -d '\n')" $( [[ ! -z "${2}" ]] && printf %s "--kubeconfig ${2}" )
 }
 
 set_calico(){
     # add calico
-    kubectl ${1} -f https://docs.projectcalico.org/v3.6/getting-started/kubernetes/installation/hosted/calico.yaml
+    kubectl ${1} -f https://docs.projectcalico.org/v3.6/getting-started/kubernetes/installation/hosted/calico.yaml $( [[ ! -z "${2}" ]] && printf %s "--kubeconfig ${2}" )
     # Download and install `calicoctl`
     #wget https://github.com/projectcalico/calico-containers/releases/download/v0.22.0/calicoctl
     #sudo chmod +x calicoctl
@@ -312,10 +322,19 @@ schedule_master(){
     kubectl taint nodes --all node-role.kubernetes.io/master-
 }
 
+set_additional_vagrant_configs(){
+    # https://stackoverflow.com/questions/44125020/cant-install-kubernetes-on-vagrant
+    # net.bridge.bridge-nf-call-iptables = 1
+    $(cat /etc/sysctl.conf | grep net.bridge.bridge-nf-call-iptables > /dev/null 2>&1) || {
+        echo 'net.bridge.bridge-nf-call-iptables = 1' | sudo tee -a /etc/sysctl.conf
+        sudo sysctl -p
+    }
+}
+
 add_nodeip_to_kubelet_config(){
     # needed when installing in a bunch of vagrant VMs where we got multiple network interfaces (eth0, eth1, etc.) and the wrong one may be taken
     # e.g. https://medium.com/@joatmon08/playing-with-kubeadm-in-vagrant-machines-part-2-bac431095706
-    target_file = "/etc/systemd/system/kubelet.service.d/10-kubeadm.conf"
+    target_file="/etc/systemd/system/kubelet.service.d/10-kubeadm.conf"
 
     # make sure we can access the folder
     sudo mkdir -p $(dirname "$target_file")
@@ -344,7 +363,7 @@ WORKERS=($WORKERS)
 
 # check if we run as main or as specific function
 if [ $# -eq 0 ]; then
-    echo "We have ${#WORKERS[@]} workers"
+    echo "Main: we have ${#WORKERS[@]} workers"
     SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
     # upload whatever private ssh key we set to use to the master node, with target name key (so that we know what to expect when doing init)
@@ -353,38 +372,60 @@ if [ $# -eq 0 ]; then
 
     echo "Uploading setup script to master node at $MASTER_HOST"
     $(upload_file $SSH_KEY_PATH 22 "$SCRIPT_DIR/setup.sh" $CLUSTER_USER $MASTER_HOST "~/")
-    $(run_remote_command $SSH_KEY_PATH 22 $CLUSTER_USER $MASTER_HOST "chmod +x ~/setup.sh; ~/setup.sh init")
+    #$(run_remote_command $SSH_KEY_PATH 22 $CLUSTER_USER $MASTER_HOST "chmod +x ~/setup.sh; ~/setup.sh init")
+    $(run_remote_command $SSH_KEY_PATH 22 $CLUSTER_USER $MASTER_HOST "~/setup.sh init ${CIDR_NET} ${MASTER_HOST} ${KUBE_VERSION}")
 
     # download the config if you want to interact with the k8s cluster from here
     echo "Downloading kubectl config from $MASTER_HOST"
     $(download_file "$SSH_KEY_PATH" "22" "$SCRIPT_DIR/admin.conf" "$CLUSTER_USER" "$MASTER_HOST" "~/.kube/admin.conf")
 
+    # download worker_init file from master node
+    $(download_file "$SSH_KEY_PATH" "22" "$SCRIPT_DIR/worker_init.sh" "$CLUSTER_USER" "$MASTER_HOST" "~/worker_init.sh")
+    # upload file on each worker node
+    echo "$(upload_file_on_workers $SSH_KEY_PATH 22 $SCRIPT_DIR/worker_init.sh $CLUSTER_USER '~/')"
+
     # upload setup file on each worker, run the command on the setup file
-    echo "$(upload_file_on_workers ${SSH_KEY_PATH} 22 ${SCRIPT_DIR}/setup.sh ${CLUSTER_USER} '~/' 'chmod +x ~/setup.sh; ~/setup.sh add')"
+    echo "$(upload_file_on_workers ${SSH_KEY_PATH} 22 ${SCRIPT_DIR}/setup.sh ${CLUSTER_USER} '~/' '~/setup.sh add')"
+
+    # show nodes info
+    kubectl --kubeconfig "$SCRIPT_DIR/admin.conf" get nodes -o wide
+
+    # add networking
+    echo "$(set_flannel apply $SCRIPT_DIR/admin.conf)"
+    # add dashboard if needed
+    echo "$(set_dashboard apply $SCRIPT_DIR/admin.conf)"
 else
     if [ "$1" = "init" ]; then
         echo "---- Creating K8s cluster, init on Master node! ----"
-        echo $(setup_docker)
+        echo $(pre_setup)
+        #echo $(setup_docker)
         echo $(disable_swap)
         echo $(install_kubeadm)
+
+	# init cluster master
+	CIDR_NET=${2}
+	MASTER_HOST=${3}
+	KUBE_VERSION=${4}
         echo $(init_cluster "$CIDR_NET" "$MASTER_HOST" "$KUBE_VERSION")
+
         # create join file
         echo $(get_tokens)
-        echo "$(upload_file_on_workers ~/key 22 ~/worker_init.sh $(whoami) '~/')"
+
         # export kubeconfig
         echo $(set_kubectl)
-        # add networking
-        echo $(set_flannel "apply")
-        echo $(set_dashboard "apply")
         echo "---- end master node setup ----"
     elif [ "$1" = "add" ]; then
         echo "---- Initializing setup on $(hostname) ----"
-        echo $(setup_docker)
+        echo $(pre_setup)
+        #echo $(setup_docker) # moved to vagrant bootup
         echo $(disable_swap)
         echo $(install_kubeadm)
+
+	echo "Joining cluster"
         echo $(join_cluster)
         # in case we use vagrant VMs to host the workers, make sure to pass --node-ip to the kubelet startup
         if [[ "$(whoami)" = "vagrant" ]]; then
+            echo $(set_additional_vagrant_configs)
             echo "eth0 has IP: $(get_ip_v4 'eth0'), eth1 has IP: $(get_ip_v4 'eth1')"
             echo $(add_nodeip_to_kubelet_config "$(get_ip_v4 'eth1')")
         fi

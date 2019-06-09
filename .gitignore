@@ -1,3 +1,4 @@
 */.vagrant/*
 *.conf
 nodes/key*
+*worker_init.sh
