@@ -200,7 +200,13 @@ install_kubeadm(){
             CURR_DIR=$(get_curr_dir)
             echo "CURR DIR is: "$CURR_DIR
             cd $HOME
-            git clone https://aur.archlinux.org/kubernetes-cni-bin.git && cd kubernetes-cni-bin && makepkg -si --noconfirm
+            # the package below misses portmap
+            #git clone https://aur.archlinux.org/kubernetes-cni-bin.git && cd kubernetes-cni-bin && makepkg -si --noconfirm
+            # installing specific version from git is better
+            export CNI_VERSION="v0.6.0"
+            mkdir -p /opt/cni/bin
+            curl -L "https://github.com/containernetworking/plugins/releases/download/${CNI_VERSION}/cni-plugins-amd64-${CNI_VERSION}.tgz" | sudo tar -C /opt/cni/bin -xz
+            rm cni-plugins-amd64-${CNI_VERSION}.tgz
             cd $HOME
             git clone https://aur.archlinux.org/kubelet-bin.git && cd kubelet-bin && makepkg -si --noconfirm
             cd $HOME
@@ -349,6 +355,7 @@ add_nodeip_to_kubelet_config(){
     echo '# the .NodeRegistration.KubeletExtraArgs object in the configuration files instead. KUBELET_EXTRA_ARGS should be sourced from this file.' | sudo tee -a $target_file
     echo 'EnvironmentFile=-/etc/default/kubelet' | sudo tee -a $target_file
     echo "Environment='KUBELET_EXTRA_ARGS=--node-ip="${1}"'" | sudo tee -a $target_file
+    #echo "Environment='KUBELET_EXTRA_ARGS=--node-ip="${1}"--cni-bin-dir=/opt/cni/bin/ --cni-conf-dir=/etc/cni/net.d'" | sudo tee -a $target_file
     echo 'ExecStart=' | sudo tee -a $target_file
     echo 'ExecStart=/usr/bin/kubelet $KUBELET_KUBECONFIG_ARGS $KUBELET_CONFIG_ARGS $KUBELET_KUBEADM_ARGS $KUBELET_EXTRA_ARGS' | sudo tee -a $target_file
 
@@ -406,7 +413,7 @@ else
 	CIDR_NET=${2}
 	MASTER_HOST=${3}
 	KUBE_VERSION=${4}
-        echo $(init_cluster "$CIDR_NET" "$MASTER_HOST" "$KUBE_VERSION")
+        echo "$(init_cluster $CIDR_NET $MASTER_HOST $KUBE_VERSION)"
 
         # create join file
         echo $(get_tokens)
@@ -423,6 +430,7 @@ else
 
 	echo "Joining cluster"
         echo $(join_cluster)
+
         # in case we use vagrant VMs to host the workers, make sure to pass --node-ip to the kubelet startup
         if [[ "$(whoami)" = "vagrant" ]]; then
             echo $(set_additional_vagrant_configs)

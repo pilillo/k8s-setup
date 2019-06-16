@@ -30,6 +30,12 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
         # open all necessary ports for the master node
         # https://kubernetes.io/docs/setup/independent/install-kubeadm/#master-node-s
         master.vm.network :forwarded_port, host: 6443, guest: 6443, auto_correct: true
+	# Flannel : make sure that your firewall rules allow UDP ports 8285 and 8472 traffic for all hosts participating in the overlay network
+	master.vm.network :forwarded_port, host: 8285, guest: 8285, auto_correct: true
+	master.vm.network :forwarded_port, host: 8472, guest: 8472, auto_correct: true
+	# HELM
+	master.vm.network :forwarded_port, host: 44134, guest:44134, auto_correct: true
+	# other K8s ports
         master.vm.network :forwarded_port, host: 2379, guest: 2380, auto_correct: true
         master.vm.network :forwarded_port, host: 10250, guest: 10250, auto_correct: true
         master.vm.network :forwarded_port, host: 10251, guest: 10251, auto_correct: true
@@ -48,6 +54,10 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
             #config.vm.network "private_network", type: "dhcp"
             node.vm.hostname = "node-#{i}"
             # port forward
+            # for flannel 
+            # Make sure that your firewall rules allow UDP ports 8285 and 8472 traffic for all hosts participating in the overlay network
+            node.vm.network :forwarded_port, guest: 8285, host: 8285, auto_correct: true
+            node.vm.network :forwarded_port, guest: 8472, host: 8472, auto_correct: true
             # https://kubernetes.io/docs/setup/independent/install-kubeadm/#worker-node-s
             for i in 30000..32767
                 node.vm.network :forwarded_port, guest: i, host: i, auto_correct: true
